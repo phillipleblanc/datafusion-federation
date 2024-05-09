@@ -52,6 +52,8 @@ impl FederationAnalyzerRule {
             return Ok((None, sole_provider));
         }
 
+        tracing::debug!("Optimizing plan: \n{:?}", plan);
+
         // optimize_inputs
         let inputs = plan.inputs();
         if inputs.is_empty() {
