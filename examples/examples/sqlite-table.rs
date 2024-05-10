@@ -77,7 +77,7 @@ async fn main() -> datafusion::error::Result<()> {
     ctx.register_table("Extra", Arc::new(extra_provider))?;
 
     // Run query
-    let query = r#"EXPLAIN SELECT
+    let query = r#"SELECT
              t.TrackId,
              t.Name AS TrackName,
              a.Title AS AlbumTitle,

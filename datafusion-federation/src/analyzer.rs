@@ -46,17 +46,22 @@ impl FederationAnalyzerRule {
         parent: Option<&LogicalPlan>,
         _config: &ConfigOptions,
     ) -> Result<(Option<LogicalPlan>, Option<FederationProviderRef>)> {
+        tracing::debug!("Optimizing plan: \n{:?}", plan);
+
         // Check if this node determines the FederationProvider
         let sole_provider = self.get_federation_provider(plan)?;
         if sole_provider.is_some() {
+            tracing::debug!(
+                "Sole provider exists: {}",
+                sole_provider.as_ref().unwrap().name()
+            );
             return Ok((None, sole_provider));
         }
-
-        tracing::debug!("Optimizing plan: \n{:?}", plan);
 
         // optimize_inputs
         let inputs = plan.inputs();
         if inputs.is_empty() {
+            tracing::debug!("No inputs to optimize");
             return Ok((None, None));
         }
 
@@ -69,23 +74,48 @@ impl FederationAnalyzerRule {
 
         // Note: assumes provider is None if ambiguous
         let first_provider = providers.first().unwrap();
+        tracing::debug!(
+            "First Provider exists={} name={}, Inputs len={}",
+            first_provider.is_some(),
+            first_provider
+                .as_ref()
+                .map(|p| p.name())
+                .unwrap_or_default(),
+            new_inputs.len()
+        );
         let is_singular = providers.iter().all(|p| p.is_some() && p == first_provider);
+        tracing::debug!("Is singular: {}", is_singular);
 
         if is_singular {
             if parent.is_none() {
+                tracing::debug!("Parent is None");
                 // federate the entire plan
                 if let Some(provider) = first_provider {
                     if let Some(optimizer) = provider.analyzer() {
                         let optimized = optimizer.execute_and_check(plan, _config, |_, _| {})?;
                         return Ok((Some(optimized), None));
                     }
+                    // No analyzer for this provider
+                    tracing::debug!("No analyzer for this provider: {}", provider.name());
                     return Ok((None, None));
                 }
+                // No provider for this sub-plan
+                tracing::debug!("No provider for this sub-plan");
                 return Ok((None, None));
             }
             // The largest sub-plan is higher up.
+            if let Some(provider) = first_provider {
+                tracing::debug!(
+                    "The largest sub-plan is higher up, but passing provider name={}",
+                    provider.name()
+                );
+            } else {
+                tracing::debug!("The largest sub-plan is higher up, but no provider");
+            }
             return Ok((None, first_provider.clone()));
         }
+
+        tracing::debug!("Ambiguous plan, optimizing inputs");
 
         // The plan is ambiguous, any inputs that are not federated and
         // have a sole provider, should be federated.
@@ -94,6 +124,7 @@ impl FederationAnalyzerRule {
             .enumerate()
             .map(|(i, new_sub_plan)| {
                 if let Some(sub_plan) = new_sub_plan {
+                    tracing::debug!("Sub-plan already optimized {:?}", sub_plan);
                     // Already federated
                     return Ok(sub_plan);
                 }
@@ -105,17 +136,26 @@ impl FederationAnalyzerRule {
 
                         let optimized =
                             optimizer.execute_and_check(&wrapped, _config, |_, _| {})?;
+                        tracing::debug!("Optimized input: \n{:?}", optimized);
                         return Ok(optimized);
                     }
                     // No federation for this sub-plan (no analyzer)
+                    tracing::debug!(
+                        "No analyzer for provider: {}. sub-plan: \n{:?}",
+                        provider.name(),
+                        *sub_plan
+                    );
                     return Ok((*sub_plan).clone());
                 }
                 // No federation for this sub-plan (no provider)
+                tracing::debug!("No provider for sub-plan: \n{:?}", *sub_plan);
                 Ok((*sub_plan).clone())
             })
             .collect::<Result<Vec<_>>>()?;
 
         let new_plan = plan.with_new_exprs(plan.expressions(), new_inputs)?;
+
+        tracing::debug!("Optimized plan: \n{:?}", new_plan);
 
         Ok((Some(new_plan), None))
     }
