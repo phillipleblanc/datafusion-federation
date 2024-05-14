@@ -1,6 +1,7 @@
 use std::sync::Arc;
 
 use datafusion::{
+    common::Column,
     config::ConfigOptions,
     datasource::source_as_provider,
     error::Result,
@@ -92,7 +93,8 @@ impl FederationAnalyzerRule {
                 // federate the entire plan
                 if let Some(provider) = first_provider {
                     if let Some(optimizer) = provider.analyzer() {
-                        let optimized = optimizer.execute_and_check(plan, _config, |_, _| {})?;
+                        let optimized =
+                            optimizer.execute_and_check(plan.clone(), _config, |_, _| {})?;
                         return Ok((Some(optimized), None));
                     }
                     // No analyzer for this provider
@@ -134,8 +136,7 @@ impl FederationAnalyzerRule {
                     if let Some(optimizer) = provider.analyzer() {
                         let wrapped = wrap_projection((*sub_plan).clone())?;
 
-                        let optimized =
-                            optimizer.execute_and_check(&wrapped, _config, |_, _| {})?;
+                        let optimized = optimizer.execute_and_check(wrapped, _config, |_, _| {})?;
                         tracing::debug!("Optimized input: \n{:?}", optimized);
                         return Ok(optimized);
                     }
@@ -183,7 +184,7 @@ fn wrap_projection(plan: LogicalPlan) -> Result<LogicalPlan> {
                 .schema()
                 .fields()
                 .iter()
-                .map(|f| Expr::Column(f.qualified_column()))
+                .map(|f| Expr::Column(Column::new_unqualified(f.name())))
                 .collect::<Vec<Expr>>();
             Ok(LogicalPlan::Projection(Projection::try_new(
                 expr,
