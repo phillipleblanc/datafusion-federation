@@ -14,7 +14,7 @@ use datafusion::{
         DisplayAs, DisplayFormatType, ExecutionMode, ExecutionPlan, Partitioning, PlanProperties,
         SendableRecordBatchStream,
     },
-    sql::unparser::plan_to_sql,
+    sql::{unparser::plan_to_sql, TableReference},
 };
 use datafusion_federation::{FederatedPlanNode, FederationPlanner, FederationProvider};
 
@@ -74,7 +74,8 @@ impl SQLFederationAnalyzerRule {
 
 impl AnalyzerRule for SQLFederationAnalyzerRule {
     fn analyze(&self, plan: LogicalPlan, _config: &ConfigOptions) -> Result<LogicalPlan> {
-        // Simply accept the entire plan for now
+        // Find all table scans, recover the SQLTableSource, find the remote table name and replace the name of the TableScan table.
+        let plan = rewrite_table_scans(&plan)?;
 
         let fed_plan = FederatedPlanNode::new(plan.clone(), Arc::clone(&self.planner));
         let ext_node = Extension {
@@ -88,6 +89,29 @@ impl AnalyzerRule for SQLFederationAnalyzerRule {
         "federate_sql"
     }
 }
+
+fn rewrite_table_scans(plan: &LogicalPlan) -> Result<LogicalPlan> {
+    if plan.inputs().is_empty() {
+        if let LogicalPlan::TableScan(table_scan) = plan {
+            let mut new_table_scan = table_scan.clone();
+            new_table_scan.table_name = TableReference::from("eth.blocks");
+            return Ok(LogicalPlan::TableScan(table_scan.clone())); // SILLY
+        } else {
+            return Ok(plan.clone());
+        }
+    }
+
+    let rewritten_inputs = plan
+        .inputs()
+        .into_iter()
+        .map(rewrite_table_scans)
+        .collect::<Result<Vec<_>>>()?;
+
+    let new_plan = plan.with_new_exprs(plan.expressions(), rewritten_inputs)?;
+
+    Ok(new_plan)
+}
+
 struct SQLFederationPlanner {
     executor: Arc<dyn SQLExecutor>,
 }
