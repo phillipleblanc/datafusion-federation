@@ -16,7 +16,9 @@ use datafusion::{
     },
     sql::{unparser::plan_to_sql, TableReference},
 };
-use datafusion_federation::{FederatedPlanNode, FederationPlanner, FederationProvider};
+use datafusion_federation::{
+    get_table_source, FederatedPlanNode, FederationPlanner, FederationProvider,
+};
 
 mod schema;
 pub use schema::*;
@@ -90,12 +92,27 @@ impl AnalyzerRule for SQLFederationAnalyzerRule {
     }
 }
 
+/// Rewrite table scans to use the original federated table name.
 fn rewrite_table_scans(plan: &LogicalPlan) -> Result<LogicalPlan> {
     if plan.inputs().is_empty() {
         if let LogicalPlan::TableScan(table_scan) = plan {
             let mut new_table_scan = table_scan.clone();
-            new_table_scan.table_name = TableReference::from("eth.blocks");
-            return Ok(LogicalPlan::TableScan(new_table_scan.clone())); // SILLY
+
+            let Some(federated_source) = get_table_source(&table_scan.source)? else {
+                // Not a federated source
+                return Ok(plan.clone());
+            };
+
+            match federated_source.as_any().downcast_ref::<SQLTableSource>() {
+                Some(sql_table_source) => {
+                    new_table_scan.table_name = TableReference::from(sql_table_source.table_name());
+                }
+                None => {
+                    // Not a SQLTableSource (is this possible?)
+                    return Ok(plan.clone());
+                }
+            }
+            return Ok(LogicalPlan::TableScan(new_table_scan.clone()));
         } else {
             return Ok(plan.clone());
         }
