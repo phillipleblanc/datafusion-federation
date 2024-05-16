@@ -95,7 +95,7 @@ fn rewrite_table_scans(plan: &LogicalPlan) -> Result<LogicalPlan> {
         if let LogicalPlan::TableScan(table_scan) = plan {
             let mut new_table_scan = table_scan.clone();
             new_table_scan.table_name = TableReference::from("eth.blocks");
-            return Ok(LogicalPlan::TableScan(table_scan.clone())); // SILLY
+            return Ok(LogicalPlan::TableScan(new_table_scan.clone())); // SILLY
         } else {
             return Ok(plan.clone());
         }
