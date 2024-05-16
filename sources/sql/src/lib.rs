@@ -7,7 +7,7 @@ use datafusion::{
     config::ConfigOptions,
     error::Result,
     execution::{context::SessionState, TaskContext},
-    logical_expr::{Extension, LogicalPlan},
+    logical_expr::{Extension, LogicalPlan, SubqueryAlias},
     optimizer::analyzer::{Analyzer, AnalyzerRule},
     physical_expr::EquivalenceProperties,
     physical_plan::{
@@ -96,6 +96,7 @@ impl AnalyzerRule for SQLFederationAnalyzerRule {
 fn rewrite_table_scans(plan: &LogicalPlan) -> Result<LogicalPlan> {
     if plan.inputs().is_empty() {
         if let LogicalPlan::TableScan(table_scan) = plan {
+            let original_table_name = table_scan.table_name.clone();
             let mut new_table_scan = table_scan.clone();
 
             let Some(federated_source) = get_table_source(&table_scan.source)? else {
@@ -112,7 +113,14 @@ fn rewrite_table_scans(plan: &LogicalPlan) -> Result<LogicalPlan> {
                     return Ok(plan.clone());
                 }
             }
-            return Ok(LogicalPlan::TableScan(new_table_scan.clone()));
+
+            // Wrap the table scan in a SubqueryAlias back to the original table name, so references continue to work.
+            let subquery_alias = LogicalPlan::SubqueryAlias(SubqueryAlias::try_new(
+                Arc::new(LogicalPlan::TableScan(new_table_scan)),
+                original_table_name,
+            )?);
+
+            return Ok(subquery_alias);
         } else {
             return Ok(plan.clone());
         }
