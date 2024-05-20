@@ -94,6 +94,7 @@ impl AnalyzerRule for SQLFederationAnalyzerRule {
 
 /// Rewrite table scans to use the original federated table name.
 fn rewrite_table_scans(plan: &LogicalPlan) -> Result<LogicalPlan> {
+    tracing::trace!("rewrite_table_scans: plan={plan:?}");
     if plan.inputs().is_empty() {
         if let LogicalPlan::TableScan(table_scan) = plan {
             let original_table_name = table_scan.table_name.clone();
@@ -128,6 +129,7 @@ fn rewrite_table_scans(plan: &LogicalPlan) -> Result<LogicalPlan> {
 
     let mut new_expressions = vec![];
     for expression in plan.expressions() {
+        tracing::trace!("rewrite_table_scans: expression={expression:?}");
         new_expressions.push(rewrite_table_scans_in_subqueries(expression)?);
     }
 
