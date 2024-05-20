@@ -151,7 +151,10 @@ fn rewrite_table_scans_in_subqueries(expr: Expr) -> Result<Expr> {
                 outer_ref_columns: subquery.outer_ref_columns,
             }))
         }
-        _ => Ok(expr),
+        _ => {
+            tracing::debug!("rewrite_table_scans_in_subqueries: no match for expr={expr:?}",);
+            Ok(expr)
+        }
     }
 }
 
