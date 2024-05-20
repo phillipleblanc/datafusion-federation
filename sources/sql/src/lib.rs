@@ -7,7 +7,7 @@ use datafusion::{
     config::ConfigOptions,
     error::Result,
     execution::{context::SessionState, TaskContext},
-    logical_expr::{Expr, Extension, LogicalPlan, Subquery, SubqueryAlias},
+    logical_expr::{BinaryExpr, Expr, Extension, LogicalPlan, Subquery, SubqueryAlias},
     optimizer::analyzer::{Analyzer, AnalyzerRule},
     physical_expr::EquivalenceProperties,
     physical_plan::{
@@ -76,7 +76,6 @@ impl SQLFederationAnalyzerRule {
 
 impl AnalyzerRule for SQLFederationAnalyzerRule {
     fn analyze(&self, plan: LogicalPlan, _config: &ConfigOptions) -> Result<LogicalPlan> {
-        tracing::info!("SQLFederationAnalyzerRule: plan={plan:?}");
         // Find all table scans, recover the SQLTableSource, find the remote table name and replace the name of the TableScan table.
         let plan = rewrite_table_scans(&plan)?;
 
@@ -95,7 +94,6 @@ impl AnalyzerRule for SQLFederationAnalyzerRule {
 
 /// Rewrite table scans to use the original federated table name.
 fn rewrite_table_scans(plan: &LogicalPlan) -> Result<LogicalPlan> {
-    tracing::trace!("rewrite_table_scans: plan={plan:?}");
     if plan.inputs().is_empty() {
         if let LogicalPlan::TableScan(table_scan) = plan {
             let original_table_name = table_scan.table_name.clone();
@@ -130,7 +128,6 @@ fn rewrite_table_scans(plan: &LogicalPlan) -> Result<LogicalPlan> {
 
     let mut new_expressions = vec![];
     for expression in plan.expressions() {
-        tracing::trace!("rewrite_table_scans: expression={expression:?}");
         new_expressions.push(rewrite_table_scans_in_subqueries(expression)?);
     }
 
@@ -153,6 +150,15 @@ fn rewrite_table_scans_in_subqueries(expr: Expr) -> Result<Expr> {
                 subquery: Arc::new(new_subquery),
                 outer_ref_columns: subquery.outer_ref_columns,
             }))
+        }
+        Expr::BinaryExpr(binary_expr) => {
+            let left = rewrite_table_scans_in_subqueries(*binary_expr.left)?;
+            let right = rewrite_table_scans_in_subqueries(*binary_expr.right)?;
+            Ok(Expr::BinaryExpr(BinaryExpr::new(
+                Box::new(left),
+                binary_expr.op,
+                Box::new(right),
+            )))
         }
         _ => {
             tracing::debug!("rewrite_table_scans_in_subqueries: no match for expr={expr:?}",);
