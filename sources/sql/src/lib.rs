@@ -76,6 +76,7 @@ impl SQLFederationAnalyzerRule {
 
 impl AnalyzerRule for SQLFederationAnalyzerRule {
     fn analyze(&self, plan: LogicalPlan, _config: &ConfigOptions) -> Result<LogicalPlan> {
+        tracing::info!("SQLFederationAnalyzerRule: plan={plan:?}");
         // Find all table scans, recover the SQLTableSource, find the remote table name and replace the name of the TableScan table.
         let plan = rewrite_table_scans(&plan)?;
 
