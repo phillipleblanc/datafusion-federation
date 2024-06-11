@@ -6,7 +6,7 @@ use datafusion::{
     arrow::datatypes::{Schema, SchemaRef},
     common::Column,
     config::ConfigOptions,
-    error::Result,
+    error::{DataFusionError, Result},
     execution::{context::SessionState, TaskContext},
     logical_expr::{
         expr::{
@@ -23,6 +23,7 @@ use datafusion::{
         SendableRecordBatchStream,
     },
     sql::{
+        sqlparser::ast::{Query, Statement},
         unparser::{plan_to_sql, Unparser},
         TableReference,
     },
@@ -606,6 +607,30 @@ impl ExecutionPlan for VirtualExecutionPlan {
         let dialect = self.executor.dialect();
         let unparser = Unparser::new(dialect.as_ref());
         let ast = unparser.plan_to_sql(&self.plan)?;
+        // let Statement::Query(query) = ast else {
+        //     return Err(DataFusionError::Execution(
+        //         "Unparser did not return a Query".to_string(),
+        //     ));
+        // };
+        // let Query {
+        //     with,
+        //     body,
+        //     order_by,
+        //     limit,
+        //     limit_by,
+        //     offset,
+        //     fetch,
+        //     locks,
+        //     for_clause,
+        // } = *query;
+        // let Some(with) = with else {
+        //     return Err(DataFusionError::Execution(
+        //         "Unparser did not return a Query with a with clause".to_string(),
+        //     ));
+        // };
+        // with.cte_tables[0].query;
+        // So the logic is something like: if a cte_table is set on the VirtualExecutionPlan, it will deconstruct the query returned to add it to the WITH statement.
+        // On the spice side, we detect if the FROM: is a function, and if so then we "register" it with the nickname given by the dataset, and create a CTE with that nickname.
         let query = format!("{ast}");
 
         self.executor.execute(query.as_str(), self.schema())
